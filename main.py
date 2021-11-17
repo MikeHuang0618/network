@@ -2,30 +2,41 @@
 # -*- coding:utf-8 _*-
 
 import tensorflow as tf
-import os
-from tensorflow.python.keras import backend as K
 from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.layers import Flatten, Dense, Dropout
+from tensorflow.python.keras.applications.resnet import ResNet50
+from tensorflow.python.keras.optimizers import Adam
 
 def train():
-    mnist = tf.keras.datasets.mnist
+    cifar10 = tf.keras.datasets.cifar10
 
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
-    x_train, x_test = x_train / 255.0, x_test / 255.0
+    (x_train, y_train), (x_test, y_test) = cifar10.load_data()
+    x_train, x_test = x_train.astype('float32') / 255.0, x_test.astype('float32') / 255.0
 
-    model = tf.keras.models.Sequential([
-        tf.keras.layers.Flatten(input_shape=(28, 28)),
-        tf.keras.layers.Dense(128, activation='relu'),
-        tf.keras.layers.Dropout(0.2),
-        tf.keras.layers.Dense(10, activation='softmax')
-    ])
+    y_train = tf.keras.utils.to_categorical(y_train)
+    y_test = tf.keras.utils.to_categorical(y_test)
 
-    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-    model.summary()
+    model = ResNet50(include_top=False, weights='imagenet', input_tensor=None,
+                     input_shape=(32, 32, 3))
+    out = model.output
+    out = Flatten()(out)
+    out = Dropout(0.5)(out)
+    out_layer = Dense(10, activation='softmax', name='softmax')(out)
+
+    model_final = Model(inputs=model.input, outputs=out_layer)
+    for layer in model_final.layers[:2]:
+        layer.trainable = False
+    for layer in model_final.layers[2:]:
+        layer.trainable = True
+
+    model_final.compile(optimizer=Adam(lr=1e-5), loss='categorical_crossentropy', metrics=['accuracy'])
+    model_final.summary()
     checkpoint_path = "./models/checkpoint.ckpt"
     cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path, save_weights_only=True, verbose=1)
-    model.fit(x_train, y_train, epochs=10, validation_data=(x_test, y_test), callbacks=[cp_callback])
-    model.evaluate(x_test, y_test, verbose=2)
-    model.save('./models/model.h5')
+    model_final.fit(x_train, y_train, epochs=10, validation_data=(x_test, y_test), callbacks=[cp_callback])
+    model_final.evaluate(x_test, y_test, verbose=2)
+    model_final.save('./models/model.h5')
 
 def h52pb(h5_path):
     model = tf.keras.models.load_model(h5_path)
@@ -85,5 +96,5 @@ def test_pb():
 if __name__ == "__main__":
     input_file = './models/model.h5'
     train()
-    h52pb(input_file)
-    test_pb()
+    # h52pb(input_file)
+    # test_pb()
