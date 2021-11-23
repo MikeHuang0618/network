@@ -4,9 +4,10 @@
 import tensorflow as tf
 from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2
 from tensorflow.python.keras.models import Model
-from tensorflow.python.keras.layers import Flatten, Dense, Dropout
+from tensorflow.python.keras.layers import MaxPooling2D, Conv2D
 from tensorflow.python.keras.applications.resnet import ResNet50
 from tensorflow.python.keras.optimizers import Adam
+
 
 def train():
     cifar10 = tf.keras.datasets.cifar10
@@ -20,9 +21,16 @@ def train():
     model = ResNet50(include_top=False, weights='imagenet', input_tensor=None,
                      input_shape=(32, 32, 3))
     out = model.output
-    out = Flatten()(out)
-    out = Dropout(0.5)(out)
-    out_layer = Dense(10, activation='softmax', name='softmax')(out)
+    out = Conv2D(1024, 3, dilation_rate=6, activation='relu')(out)
+    out = Conv2D(1024, 1, activation='relu', padding='same')(out)
+    out = Conv2D(256, 1, activation='relu', padding='same')(out)
+    out = Conv2D(512, 3, strides=2, activation='relu', padding='same')(out)
+    out = Conv2D(128, 1, activation='relu', padding='same')(out)
+    out = Conv2D(256, 3, strides=2, activation='relu', padding='same')(out)
+    out = Conv2D(128, 1, activation='relu', padding='same')(out)
+    out = Conv2D(256, 3, activation='relu', padding='valid')(out)
+    out = Conv2D(128, 1, activation='relu', padding='same')(out)
+    out_layer = Conv2D(256, 3, activation='relu', padding='valid')(out)
 
     model_final = Model(inputs=model.input, outputs=out_layer)
     for layer in model_final.layers[:2]:
@@ -37,6 +45,7 @@ def train():
     model_final.fit(x_train, y_train, epochs=10, validation_data=(x_test, y_test), callbacks=[cp_callback])
     model_final.evaluate(x_test, y_test, verbose=2)
     model_final.save('./models/model.h5')
+
 
 def h52pb(h5_path):
     model = tf.keras.models.load_model(h5_path)
@@ -63,6 +72,7 @@ def h52pb(h5_path):
                       name="frozen_graph.pbtxt",
                       as_text=True)
 
+
 def wrap_frozen_graph(graph_def, inputs, outputs, print_graph=False):
     def _imports_graph_def():
         tf.compat.v1.import_graph_def(graph_def, name="")
@@ -82,15 +92,16 @@ def wrap_frozen_graph(graph_def, inputs, outputs, print_graph=False):
         tf.nest.map_structure(import_graph.as_graph_element, inputs),
         tf.nest.map_structure(import_graph.as_graph_element, outputs))
 
+
 def test_pb():
     with tf.io.gfile.GFile("./models/frozen_graph.pb", "rb") as f:
         graph_def = tf.compat.v1.GraphDef()
         loaded = graph_def.ParseFromString(f.read())
 
     wrap_frozen_graph(graph_def=graph_def,
-                        inputs=["x:0"],
-                        outputs=["Identity:0"],
-                        print_graph=True)
+                      inputs=["x:0"],
+                      outputs=["Identity:0"],
+                      print_graph=True)
 
 
 if __name__ == "__main__":
